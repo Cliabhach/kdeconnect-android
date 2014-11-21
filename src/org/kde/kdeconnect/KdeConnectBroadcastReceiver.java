@@ -20,12 +20,16 @@
 
 package org.kde.kdeconnect;
 
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.net.ConnectivityManager;
 import android.net.wifi.WifiManager;
 import android.util.Log;
+
+import org.kde.kdeconnect.Backends.BluetoothBackend.BluetoothLinkProvider;
 
 public class KdeConnectBroadcastReceiver extends BroadcastReceiver
 {
@@ -79,11 +83,50 @@ public class KdeConnectBroadcastReceiver extends BroadcastReceiver
                     }
                 });
                 break;
+            case BluetoothAdapter.ACTION_STATE_CHANGED:
+                if (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, 0) != BluetoothAdapter.STATE_ON)
+			return;
+		Log.i("KdeConnect", "Bluetooth is now available.");
+		break;
+            case BluetoothDevice.ACTION_BOND_STATE_CHANGED:
+                final BluetoothDevice bd = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+		final int bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, 0);
+
+		if (bondState != BluetoothDevice.BOND_BONDED) {
+			String details = bondState == BluetoothDevice.BOND_BONDING ? " yet" : " at all.";
+			Log.d("KdeConnect", "Bluetooth device not ready" + details);
+			BackgroundService.RunCommand(context, new BackgroundService.InstanceCallback() {
+				@Override
+				public void onServiceStart(BackgroundService service) {
+					BluetoothLinkProvider.removeBondedDevice(bd);
+				}
+			});
+		} else {
+			Log.i("KdeConnect", "New Bluetooth device found.");
+			BackgroundService.RunCommand(context, new BackgroundService.InstanceCallback() {
+				@Override
+				public void onServiceStart(BackgroundService service) {
+					BluetoothLinkProvider.addBondedDevice(bd);
+					final String targetAddress = bd.getAddress();
+					Device targetDevice = null;
+					for (Device device : service.getDevices().values())
+						if (targetAddress.equals(device.getBluetoothAddress())) {
+							// We've identified this device before.
+							targetDevice = device;
+							break;
+						}
+					// TODO: What do we do with targetDevice? Send it an identity package?
+					if (targetDevice == null) {
+						// This is a new device.
+						return;
+					}
+				}
+			});
+		}
+		break;
             default:
                 Log.i("BroadcastReceiver", "Ignoring broadcast event: "+intent.getAction());
                 break;
-        }
-
     }
 
 

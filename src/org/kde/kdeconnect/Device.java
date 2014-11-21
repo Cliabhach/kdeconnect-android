@@ -35,6 +35,7 @@ import android.util.Base64;
 import android.util.Log;
 
 import org.kde.kdeconnect.Backends.BaseLink;
+import org.kde.kdeconnect.Backends.BluetoothBackend.BluetoothLink;
 import org.kde.kdeconnect.Plugins.Plugin;
 import org.kde.kdeconnect.Plugins.PluginFactory;
 import org.kde.kdeconnect.UserInterface.PairActivity;
@@ -60,6 +61,7 @@ public class Device implements BaseLink.PackageReceiver {
     public PublicKey publicKey;
     private int notificationId;
     private int protocolVersion;
+	private String bluetoothAddress;
 
     private enum PairStatus {
         NotPaired,
@@ -105,6 +107,10 @@ public class Device implements BaseLink.PackageReceiver {
             Log.e("Device","Exception");
         }
 
+		String address = settings.getString(name + "bluetoothAddress", null);
+		if (address != null)
+			this.bluetoothAddress = address;
+
         reloadPluginsFromSettings();
     }
 
@@ -119,6 +125,10 @@ public class Device implements BaseLink.PackageReceiver {
         this.protocolVersion = np.getInt("protocolVersion");
         this.pairStatus = PairStatus.NotPaired;
         this.publicKey = null;
+		if (dl instanceof BluetoothLink)
+			this.bluetoothAddress = ((BluetoothLink) dl).getBluetoothAddress();
+		else
+			this.bluetoothAddress = null;
 
         settings = context.getSharedPreferences(deviceId, Context.MODE_PRIVATE);
 
@@ -138,7 +148,13 @@ public class Device implements BaseLink.PackageReceiver {
         return protocolVersion - NetworkPackage.ProtocolVersion;
     }
 
+	public String getBluetoothAddress() {
+		return bluetoothAddress;
+	}
 
+	public void setBluetoothAddress(String bluetoothAddress) {
+		this.bluetoothAddress = bluetoothAddress;
+	}
 
 
 
@@ -259,6 +275,7 @@ public class Device implements BaseLink.PackageReceiver {
         editor.putString("deviceName", getName());
         String encodedPublicKey = Base64.encodeToString(publicKey.getEncoded(), 0);
         editor.putString("publicKey", encodedPublicKey);
+        editor.putString(name + "bluetoothAddress", bluetoothAddress);
         editor.apply();
 
         reloadPluginsFromSettings();
