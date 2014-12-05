@@ -1,8 +1,10 @@
 package org.kde.kdeconnect.Backends.BluetoothBackend;
 
+import android.annotation.TargetApi;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
+import android.os.Build;
 import android.util.Log;
 
 import org.kde.kdeconnect.Backends.BaseLink;
@@ -10,8 +12,10 @@ import org.kde.kdeconnect.Backends.BaseLinkProvider;
 import org.kde.kdeconnect.NetworkPackage;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.Method;
 import java.security.PublicKey;
 import java.util.UUID;
 
@@ -25,6 +29,10 @@ public class BluetoothLink extends BaseLink {
 	 * Use it to create and end connections.
 	 */
 	protected BluetoothAdapter btAdapter;
+	/**
+	 * Represents the built-in method to create an RFComm socket with a given channel
+	 */
+	private static Method createRfcommSocket;
 
 	protected BluetoothLink(String deviceId, BaseLinkProvider linkProvider, BluetoothAdapter btAdapter, BluetoothDevice otherDevice) {
 		super(deviceId, linkProvider);
@@ -34,7 +42,7 @@ public class BluetoothLink extends BaseLink {
 	}
 
 	public BluetoothLink(BluetoothLinkProvider bluetoothLinkProvider, BluetoothAdapter btAdapter, BluetoothDevice bluetoothDevice, BluetoothSocket bluetoothSocket) {
-		super(null, bluetoothLinkProvider);
+		super(bluetoothDevice.getAddress(), bluetoothLinkProvider);
 		otherDevice = bluetoothDevice;
 		this.btAdapter = btAdapter;
 		btSocket = bluetoothSocket;
@@ -69,41 +77,58 @@ public class BluetoothLink extends BaseLink {
 	}
 
 	private Thread sendPayloadAndPackage(final InputStream payloadStream, NetworkPackage np) {
-		try {
+		synchronized (APP_UUID) {
+			try {
 
-			BluetoothSocket candidateLocalSocket = btSocket;
-			boolean success = (btSocket == null);
-			int tries = 1;
-			while(!success) {
-				try {
-					candidateLocalSocket = otherDevice.createRfcommSocketToServiceRecord(APP_UUID);
-					success = true;
-				} catch(Exception e) {
-					Log.e("BluetoothLink", "Exception opening serversocket: ", e);
-					tries++;
-					// Allow for 10 tries
-					if (tries > 9) {
-						Log.e("BluetoothLink", "Giving up on this connection");
-						return null;
+				BluetoothSocket candidateLocalSocket = btSocket;
+				boolean success = (btSocket != null && isConnectedICS(btSocket));
+				int tries = 1;
+				int nextChannel = 0;
+				while (!success) {
+					try {
+						if (tries < 3)
+							candidateLocalSocket = otherDevice.createRfcommSocketToServiceRecord(APP_UUID);
+						else {
+							nextChannel = (int) (Math.random() * 28) + 2; // Smallest channel we can use is 2 - trying 0 or 1 will always fail.
+							if (createRfcommSocket == null)
+								createRfcommSocket = BluetoothDevice.class.getDeclaredMethod("createRfcommSocket", Integer.TYPE);
+							candidateLocalSocket = (BluetoothSocket) createRfcommSocket.invoke(otherDevice, nextChannel);
+						}
+						candidateLocalSocket.connect();
+						success = true;
+						Log.i("BluetoothLink", "Success connecting to " + otherDevice + " on try " + tries + " over channel " + nextChannel);
+					} catch (Exception e) {
+						Log.e("BluetoothLink", "Exception opening serversocket to " + otherDevice + " on try " + tries + " over channel " + nextChannel + "; " + e.getMessage());
+						tries++;
+						// Allow for 6 tries - channels go 1 to 30
+						if (tries > 6) {
+							Log.e("BluetoothLink", "Giving up on this connection");
+							return null;
+						}
 					}
 				}
+
+				final BluetoothSocket localSocket = candidateLocalSocket;
+				final String serialized = np.serialize();
+				Log.i("BL: ", "About to start thread for sending NetworkPackage to " + otherDevice.getAddress());
+				Thread thread = new Thread(new PayloadAndPackageRunnable(localSocket, payloadStream, serialized));
+				thread.start();
+
+				return thread;
+
+			} catch (Exception e) {
+
+				e.printStackTrace();
+				Log.e("BluetoothLink", "Exception with payload upload socket");
+
+				return null;
 			}
-
-			final BluetoothSocket localSocket = candidateLocalSocket;
-			final String serialized = np.serialize();
-			Log.i("BL: ", "About to start thread for sending NetworkPackage to " + otherDevice.getAddress());
-			Thread thread = new Thread(new PayloadAndPackageRunnable(localSocket, payloadStream, serialized));
-			thread.start();
-
-			return thread;
-
-		} catch(Exception e) {
-
-			e.printStackTrace();
-			Log.e("BluetoothLink", "Exception with payload upload socket");
-
-			return null;
 		}
+	}
+
+	@TargetApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH)
+	private boolean isConnectedICS(BluetoothSocket socket) {
+		return (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH) && socket.isConnected();
 	}
 
 	private Thread sendPackageOnly(NetworkPackage np) {
@@ -178,22 +203,27 @@ public class BluetoothLink extends BaseLink {
 		@Override
 		public void run() {
 			//TODO: Timeout when waiting for a connection and close the socket
-			OutputStream socket = null;
+			OutputStream outSocket = null;
 			InputStream inSocket = null;
-			try {
 
 				// Turn off discovery for better performance.
 				btAdapter.cancelDiscovery();
 
-				if (!localSocket.isConnected()) {
+				/*if (!isConnectedICS(localSocket)) {
 					Log.i("BluetoothLink: PAPRunnable", "Trying to connect to " + getBluetoothAddress());
 
-					localSocket.connect();
-				}
+					try {
+						localSocket.connect();
+					} catch (IOException ioe) {
+						Log.w("BluetoothLink: PAPRunnable", "Initial connection failed.");
+						return;
+					}
+				}*/
 
 				Log.i("BluetoothLink: PAPRunnable", "Connection succeeded to " + getBluetoothAddress());
 
-				socket = localSocket.getOutputStream();
+			try {
+				outSocket = localSocket.getOutputStream();
 
 				byte[] buffer = new byte[4096];
 				int bytesRead;
@@ -203,15 +233,15 @@ public class BluetoothLink extends BaseLink {
 
 					Log.e("BluetoothLink", "Beginning to send payload");
 					while ((bytesRead = payloadStream.read(buffer)) != -1) {
-						Log.i("ok",""+bytesRead);
-						socket.write(buffer, 0, bytesRead);
+						Log.i("BL: ok",""+bytesRead);
+						outSocket.write(buffer, 0, bytesRead);
 					}
 					Log.e("BluetoothLink", "Finished sending payload");
 
 					inSocket = localSocket.getInputStream();
 
 					while ((bytesRead = inSocket.read(buffer)) != -1) {
-						Log.i("ok", "" + bytesRead);
+						Log.i("BL: ok", "" + bytesRead);
 						temp = new String(buffer, 0, bytesRead);
 					}
 				} else {
@@ -225,8 +255,9 @@ public class BluetoothLink extends BaseLink {
 					InputStream serializedStream = new ByteArrayInputStream(serialized.getBytes("UTF-8"));
 					Log.e("BluetoothLink","Beginning to send package");
 					while ((bytesRead = serializedStream.read(buffer)) != -1) {
-						//Log.e("ok",""+bytesRead);
-						socket.write(buffer, 0, bytesRead);
+						Log.i("BL: ok",""+bytesRead);
+						outSocket.write(buffer, 0, bytesRead);
+						outSocket.flush();
 					}
 					Log.e("BluetoothLink","Finished sending package");
 
@@ -237,13 +268,12 @@ public class BluetoothLink extends BaseLink {
 			} catch(Exception e) {
 				Log.e("BluetoothLink: PAPRunnable", "Exception with payload upload socket", e);
 			} finally {
-				if (socket != null) {
-					try { socket.close(); } catch(Exception e) { }
+				if (outSocket != null) {
+					try { outSocket.close(); } catch(Exception e) { }
 				}
 				if (inSocket != null) {
 					try { inSocket.close(); } catch(Exception e) { }
 				}
-				try { localSocket.close(); } catch(Exception e) { }
 			}
 		}
 	}

@@ -114,12 +114,13 @@ public class KdeConnectBroadcastReceiver extends BroadcastReceiver
 							// We've identified this device before.
 							targetDevice = device;
 							break;
-						}
+                                                }
 					// TODO: What do we do with targetDevice? Send it an identity package?
 					if (targetDevice == null) {
-						// This is a new device.
-						return;
-					}
+						// This is a new device. Connect, listen, and receive an identity package
+					} else {
+						service.onNetworkChange();
+                                        }
 				}
 			});
 		}
