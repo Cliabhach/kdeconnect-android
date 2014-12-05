@@ -204,9 +204,8 @@ public class BluetoothLink extends BaseLink {
 		public void run() {
 			//TODO: Timeout when waiting for a connection and close the socket
 			OutputStream outSocket = null;
-			InputStream inSocket = null;
 
-				// Turn off discovery for better performance.
+			// Turn off discovery for better performance.
 				btAdapter.cancelDiscovery();
 
 				/*if (!isConnectedICS(localSocket)) {
@@ -227,7 +226,6 @@ public class BluetoothLink extends BaseLink {
 
 				byte[] buffer = new byte[4096];
 				int bytesRead;
-				String temp = null;
 
 				if (payloadStream != null) {
 
@@ -237,42 +235,25 @@ public class BluetoothLink extends BaseLink {
 						outSocket.write(buffer, 0, bytesRead);
 					}
 					Log.e("BluetoothLink", "Finished sending payload");
-
-					inSocket = localSocket.getInputStream();
-
-					while ((bytesRead = inSocket.read(buffer)) != -1) {
-						Log.i("BL: ok", "" + bytesRead);
-						temp = new String(buffer, 0, bytesRead);
-					}
-				} else {
-					temp = "received";
+					outSocket.write("Bluetooth Nonce".getBytes("UTF-8"));
+					Log.e("BluetoothLink", "Finished sending nonce");
 				}
 
-				// This confirms that the payload went through all right.
-				if (temp != null && temp.equals("received")) {
-
-					// Time to send the actual package. Use UTF-8 for encoding to bytes.
-					InputStream serializedStream = new ByteArrayInputStream(serialized.getBytes("UTF-8"));
-					Log.e("BluetoothLink","Beginning to send package");
-					while ((bytesRead = serializedStream.read(buffer)) != -1) {
-						Log.i("BL: ok",""+bytesRead);
-						outSocket.write(buffer, 0, bytesRead);
-						outSocket.flush();
-					}
-					Log.e("BluetoothLink","Finished sending package");
-
-				} else {
-					Log.e("BluetoothLink", "Payload not received at the other end.");
+				// Time to send the actual package. Use UTF-8 for encoding to bytes.
+				InputStream serializedStream = new ByteArrayInputStream(serialized.getBytes("UTF-8"));
+				Log.e("BluetoothLink","Beginning to send package");
+				while ((bytesRead = serializedStream.read(buffer)) != -1) {
+					Log.i("BL: ok",""+bytesRead);
+					outSocket.write(buffer, 0, bytesRead);
+					outSocket.flush();
 				}
+				Log.e("BluetoothLink","Finished sending package");
 
 			} catch(Exception e) {
 				Log.e("BluetoothLink: PAPRunnable", "Exception with payload upload socket", e);
 			} finally {
 				if (outSocket != null) {
 					try { outSocket.close(); } catch(Exception e) { }
-				}
-				if (inSocket != null) {
-					try { inSocket.close(); } catch(Exception e) { }
 				}
 			}
 		}

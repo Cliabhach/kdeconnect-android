@@ -129,7 +129,7 @@ public class BluetoothLinkProvider extends BaseLinkProvider {
 							shouldAccept = false;
 							break;
 						}
-						synchronized (BluetoothLink.APP_UUID) {
+						synchronized (BluetoothLink.APP_UUID) { // TODO: Solve the resource starvation problem.
 							Log.d("BLP: listenerBackgroundThread", "Bluetooth is on, ready to listen.");
 							BluetoothServerSocket serverSocket = btAdapter.listenUsingRfcommWithServiceRecord("KDE Connect", BluetoothLink.APP_UUID);
 							BluetoothSocket socket = serverSocket.accept();
@@ -175,36 +175,21 @@ public class BluetoothLinkProvider extends BaseLinkProvider {
 
 				private BluetoothSocket obtainBluetoothSocket() {
 					BluetoothSocket bluetoothSocket = null;
-					int channel = (int) (Math.random() * 29);
-					boolean firstTry = true;
 					boolean success = false;
 					while (!success) {
 						try {
 
 							if (btDev.getBondState() != BluetoothDevice.BOND_BONDED)
 								break;
-							if (firstTry) {
-								bluetoothSocket = btDev.createRfcommSocketToServiceRecord(BluetoothLink.APP_UUID);
-								firstTry = false;
-							} else {
-								if (createRfcommSocket == null)
-									createRfcommSocket = BluetoothDevice.class.getDeclaredMethod("createRfcommSocket", Integer.TYPE);
-								bluetoothSocket = (BluetoothSocket) createRfcommSocket.invoke(btDev, (channel - 2));
-							}
+							bluetoothSocket = btDev.createRfcommSocketToServiceRecord(BluetoothLink.APP_UUID);
 							tries++;
 							Thread.sleep(500);
 							Log.w("BLP: ", "Bonding to device MAC=" + btDev.getAddress());
 							bluetoothSocket.connect();
-							Log.w("BLP: ", "Bond succeeded on channel " + channel);
+							Log.w("BLP: ", "Bond succeeded");
 							success = true;
 						} catch (Exception e) {
-							String details;
-							if (tries == 1)
-								details = " on first try";
-							else
-								details = " on channel " + channel;
-							Log.w("BLP: ", "Bonding failed" + details);
-							channel = (int) (Math.random() * 29);
+							Log.w("BLP: ", "Bonding failed");
 							if (tries > 2) {
 								Log.e("BLP: ", "Giving up on device MAC=" + btDev.getAddress());
 								break;
@@ -305,54 +290,36 @@ public class BluetoothLinkProvider extends BaseLinkProvider {
 				InputStream stream = acceptorTask.socket.getInputStream();
 
 				// Payload comes first...
-				StringBuilder payload = new StringBuilder();
+				StringBuilder received = new StringBuilder();
 				byte[] buffer = new byte[4096];
 				int bytesRead;
 				Log.e("BluetoothLinkProvider", "Beginning to receive package and payload");
 				while ((bytesRead = readFromStream(stream, buffer)) != -1) {
 					Log.i("ok",""+bytesRead);
 					String temp = new String(buffer, 0, bytesRead);
-					payload.append(temp);
+					received.append(temp);
 				}
 				Log.e("BluetoothLinkProvider", "Finished receiving package and payload");
-				final String thePayload = payload.toString();
-
-				/*// Clear up resources
-				socket.close();
-				stream.close();
-
-				// Start a new connection! This might be to a different device (I think)!
-				socket = serverSocket.accept();
-
-				btAdapter.cancelDiscovery();
-
-				if (socket.getRemoteDevice() != remoteDevice)
-					Log.w("BluetoothLinkProvider", "Different device connected now - be warned.");*/
-
-				OutputStream confirmation = acceptorTask.socket.getOutputStream();
-				InputStream confirmationMessage = new ByteArrayInputStream("received".getBytes("UTF-8"));
-
-				Log.i("BluetoothLink", "Sending confirmation of receipt");
-				while ((bytesRead = readFromStream(confirmationMessage, buffer)) != -1) {
-					confirmation.write(buffer, 0, bytesRead);
+				if (received.length() == 0) {
+					throw new Exception("0 bytes of data received");
 				}
-
-				// Time to get the serialized package now.
-				StringBuilder serialized = new StringBuilder();
-				buffer = new byte[4096];
-				Log.e("BluetoothLink", "Beginning to receive package");
-				while ((bytesRead = readFromStream(stream, buffer)) != -1) {
-					//Log.i("ok",""+bytesRead);
-					String temp = new String(buffer, 0, bytesRead);
-					serialized.append(temp);
+				String serialized = received.toString();
+				String payload = null;
+				int splitPoint = received.indexOf("Bluetooth Nonce");
+				if (splitPoint > 0) {
+					// There are both a payload and a package here
+					payload = received.substring(0, splitPoint);
+					serialized = received.substring(splitPoint + "Bluetooth Nonce".length());
 				}
-				Log.e("BluetoothLink", "Finished receiving package");
+				final String thePayload = payload;
 
 				// We now have a StringBuilder with a serialized NetworkPackage - time to unserialize it.
-				final NetworkPackage np = NetworkPackage.unserialize(serialized.toString());
-				np.setPayload(thePayload.getBytes());
+				final NetworkPackage np = NetworkPackage.unserialize(serialized);
+				if (thePayload != null)
+					np.setPayload(thePayload.getBytes());
 
 				if (np.getType().equals(NetworkPackage.PACKAGE_TYPE_IDENTITY)) {
+					Log.w("BluetoothLinkProvider", "New Identity package");
 					String myId = NetworkPackage.createIdentityPackage(BluetoothLinkProvider.this.context).getString("deviceId");
 					if (np.getString("deviceId").equals(myId)) {
 						return;
@@ -368,6 +335,7 @@ public class BluetoothLinkProvider extends BaseLinkProvider {
 						}
 					});
 				} else {
+					Log.w("BluetoothLinkProvider", "New non-identity package");
 					// This belongs to an existing link.
 					// First figure out which:
 					BluetoothLink desiredLink = BluetoothLinkProvider.this.knownComputers.get(np.getString("deviceId"));
@@ -385,6 +353,7 @@ public class BluetoothLinkProvider extends BaseLinkProvider {
 		 * @param buffer buffer to use while reading
 		 * @return number of bytes read, or -1 on failure
 		 */
+		@SuppressWarnings("JavadocReference")
 		private int readFromStream(InputStream stream, byte[] buffer) {
 			int bytesRead;
 			try {
