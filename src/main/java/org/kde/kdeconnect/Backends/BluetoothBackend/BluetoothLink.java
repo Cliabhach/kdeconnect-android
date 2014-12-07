@@ -15,7 +15,6 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.lang.reflect.Method;
 import java.security.PublicKey;
 import java.util.UUID;
 
@@ -29,10 +28,6 @@ public class BluetoothLink extends BaseLink {
 	 * Use it to create and end connections.
 	 */
 	protected BluetoothAdapter btAdapter;
-	/**
-	 * Represents the built-in method to create an RFComm socket with a given channel
-	 */
-	private static Method createRfcommSocket;
 
 	protected BluetoothLink(String deviceId, BaseLinkProvider linkProvider, BluetoothAdapter btAdapter, BluetoothDevice otherDevice) {
 		super(deviceId, linkProvider);
@@ -77,28 +72,20 @@ public class BluetoothLink extends BaseLink {
 	}
 
 	private Thread sendPayloadAndPackage(final InputStream payloadStream, NetworkPackage np) {
-		synchronized (APP_UUID) {
+		//synchronized (APP_UUID) {
 			try {
 
 				BluetoothSocket candidateLocalSocket = btSocket;
-				boolean success = (btSocket != null && isConnectedICS(btSocket));
+				boolean success = (btSocket != null && checkConnectedICS(btSocket));
 				int tries = 1;
-				int nextChannel = 0;
 				while (!success) {
 					try {
-						if (tries < 3)
-							candidateLocalSocket = otherDevice.createRfcommSocketToServiceRecord(APP_UUID);
-						else {
-							nextChannel = (int) (Math.random() * 28) + 2; // Smallest channel we can use is 2 - trying 0 or 1 will always fail.
-							if (createRfcommSocket == null)
-								createRfcommSocket = BluetoothDevice.class.getDeclaredMethod("createRfcommSocket", Integer.TYPE);
-							candidateLocalSocket = (BluetoothSocket) createRfcommSocket.invoke(otherDevice, nextChannel);
-						}
+						candidateLocalSocket = otherDevice.createRfcommSocketToServiceRecord(APP_UUID);
 						candidateLocalSocket.connect();
 						success = true;
-						Log.i("BluetoothLink", "Success connecting to " + otherDevice + " on try " + tries + " over channel " + nextChannel);
+						Log.i("BluetoothLink", "Success connecting to " + otherDevice + " on try " + tries);
 					} catch (Exception e) {
-						Log.e("BluetoothLink", "Exception opening serversocket to " + otherDevice + " on try " + tries + " over channel " + nextChannel + "; " + e.getMessage());
+						Log.e("BluetoothLink", "Exception opening serversocket to " + otherDevice + " on try " + tries + "; " + e.getMessage());
 						tries++;
 						// Allow for 6 tries - channels go 1 to 30
 						if (tries > 6) {
@@ -123,12 +110,22 @@ public class BluetoothLink extends BaseLink {
 
 				return null;
 			}
-		}
+		//}
 	}
 
 	@TargetApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH)
-	private boolean isConnectedICS(BluetoothSocket socket) {
-		return (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH) && socket.isConnected();
+	private boolean checkConnectedICS(BluetoothSocket socket) {
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
+			if (socket.isConnected()) {
+				return true;
+			}
+			try {
+				socket.connect();
+			} catch (IOException e) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private Thread sendPackageOnly(NetworkPackage np) {
@@ -208,7 +205,7 @@ public class BluetoothLink extends BaseLink {
 			// Turn off discovery for better performance.
 				btAdapter.cancelDiscovery();
 
-				/*if (!isConnectedICS(localSocket)) {
+				/*if (!checkConnectedICS(localSocket)) {
 					Log.i("BluetoothLink: PAPRunnable", "Trying to connect to " + getBluetoothAddress());
 
 					try {

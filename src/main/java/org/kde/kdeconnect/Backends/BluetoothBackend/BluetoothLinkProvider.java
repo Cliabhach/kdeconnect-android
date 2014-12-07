@@ -14,11 +14,8 @@ import org.kde.kdeconnect.BackgroundService;
 import org.kde.kdeconnect.Device;
 import org.kde.kdeconnect.NetworkPackage;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
-import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -47,7 +44,7 @@ public class BluetoothLinkProvider extends BaseLinkProvider {
 	private AcceptorTask acceptor;
 
 	private static boolean shouldAccept = true;
-	private static Method createRfcommSocket;
+	private final Object lock = new Object();
 
 	public BluetoothLinkProvider(Context context) {
 		this.context = context;
@@ -78,14 +75,14 @@ public class BluetoothLinkProvider extends BaseLinkProvider {
 	 *                the link between these devices.
 	 */
 	private void addLink(NetworkPackage identityPackage, BluetoothLink link) {
-		String deviceId = identityPackage.getString("deviceId");
-		Log.i("BluetoothLinkProvider", "addLink to " + deviceId);
-		BluetoothLink oldLink = knownComputers.get(deviceId);
+		String bluetoothId = link.getBluetoothAddress();
+		Log.i("BluetoothLinkProvider", "addLink to " + bluetoothId);
+		BluetoothLink oldLink = knownComputers.get(bluetoothId);
 		if (oldLink == link) {
 			Log.e("KDEConnect", "BluetoothLinkProvider: oldLink == link. This should not happen!");
 			return;
 		}
-		knownComputers.put(deviceId, link);
+		knownComputers.put(bluetoothId, link);
 		connectionAccepted(identityPackage, link);
 		if (oldLink != null) {
 			Log.i("BluetoothLinkProvider","Removing old connection to same device");
@@ -156,7 +153,7 @@ public class BluetoothLinkProvider extends BaseLinkProvider {
 
 				@Override
 				public void run() {
-					synchronized (BluetoothLink.APP_UUID) {
+					synchronized (lock) {
 						tries = 0;
 						BluetoothSocket bluetoothSocket = obtainBluetoothSocket();
 
@@ -210,7 +207,8 @@ public class BluetoothLinkProvider extends BaseLinkProvider {
 	public void onNewDeviceAvailable(NetworkPackage np, BluetoothDevice bd, Device device) {
 		if (np == null)
 			return;
-		device.setBluetoothAddress(bd.getAddress());
+		if (device != null)
+			device.setBluetoothAddress(bd.getAddress());
 		onNewDeviceAvailable(np, bd);
 	}
 
@@ -330,7 +328,11 @@ public class BluetoothLinkProvider extends BaseLinkProvider {
 						@Override
 						public void onServiceStart(BackgroundService service) {
 							Device device = service.getDevice(np.getString("deviceId"));
-							if (device == null) return;
+							if (device == null) {
+								device = service.getDevice(remoteDevice.getAddress());
+								if (device == null)
+								Log.i("BluetoothLinkProvider", "Device has only been connected over bluetooth");
+							}
 							blp.onNewDeviceAvailable(np, remoteDevice, device);
 						}
 					});
@@ -338,11 +340,29 @@ public class BluetoothLinkProvider extends BaseLinkProvider {
 					Log.w("BluetoothLinkProvider", "New non-identity package");
 					// This belongs to an existing link.
 					// First figure out which:
-					BluetoothLink desiredLink = BluetoothLinkProvider.this.knownComputers.get(np.getString("deviceId"));
+					BluetoothLink desiredLink = blp.knownComputers.get(remoteDevice.getAddress());
+					if (desiredLink == null) {
+						Log.w("AcceptorTask", "Link couldn't be found. Known links are " + blp.knownComputers.keySet().toString() + " while this device is " + remoteDevice.getAddress());
+						BackgroundService.RunCommand(blp.context, new BackgroundService.InstanceCallback() {
+							@Override
+							public void onServiceStart(BackgroundService service) {
+								Device device = service.getDevice(np.getString("deviceId"));
+								if (device == null) {
+									device = service.getDevice(remoteDevice.getAddress());
+									if (device == null)
+										Log.w("BluetoothLinkProvider", "Device thinks we've connected before, but there's no record of that.");
+									return;
+								}
+								BluetoothLink chosenLink = (BluetoothLink) device.getLink();
+								chosenLink.handleIncomingPackage(np);
+							}
+						});
+						return;
+					}
 					desiredLink.handleIncomingPackage(np);
 				}
 			} catch (Exception e) {
-				Log.d("AcceptorTask: ", "Problem with acceptor: " + e.getMessage());
+				Log.d("AcceptorTask", "Problem with acceptor: " + e.getMessage(), e);
 			}
 		}
 

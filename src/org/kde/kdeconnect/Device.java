@@ -143,7 +143,11 @@ public class Device implements BaseLink.PackageReceiver {
         return deviceId;
     }
 
-    //Returns 0 if the version matches, < 0 if it is older or > 0 if it is newer
+	public BaseLink getLink() {
+		return links.get(0);
+	}
+
+	//Returns 0 if the version matches, < 0 if it is older or > 0 if it is newer
     public int compareProtocolVersion() {
         return protocolVersion - NetworkPackage.ProtocolVersion;
     }
