@@ -85,11 +85,11 @@ public class BluetoothLink extends BaseLink {
 						success = true;
 						Log.i("BluetoothLink", "Success connecting to " + otherDevice + " on try " + tries);
 					} catch (Exception e) {
-						Log.e("BluetoothLink", "Exception opening serversocket to " + otherDevice + " on try " + tries + "; " + e.getMessage());
+						Log.e("BluetoothLink", "Exception opening serversocket to " + otherDevice + " on try " + tries);
 						tries++;
 						// Allow for 6 tries - channels go 1 to 30
 						if (tries > 6) {
-							Log.e("BluetoothLink", "Giving up on this connection");
+							Log.e("BluetoothLink", "Giving up on this connection", e);
 							return null;
 						}
 					}
