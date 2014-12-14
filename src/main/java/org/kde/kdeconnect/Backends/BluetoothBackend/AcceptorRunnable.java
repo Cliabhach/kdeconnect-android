@@ -42,7 +42,7 @@ class AcceptorRunnable implements Runnable {
 
 		final BluetoothDevice remoteDevice = socket.getRemoteDevice();
 
-		Log.i("BluetoothLinkProvider", "Device found us: " + remoteDevice.toString());
+		Log.i("AcceptorRunnable", "Device found us: " + remoteDevice.toString());
 
 		// Avoid performance issues - don't discover while transmitting or receiving data
 		blp.getBtAdapter().cancelDiscovery();
@@ -70,7 +70,7 @@ class AcceptorRunnable implements Runnable {
 				np.setPayload(payload.getBytes());
 
 			if (np.getType().equals(NetworkPackage.PACKAGE_TYPE_IDENTITY)) {
-				Log.w("BluetoothLinkProvider", "New Identity package");
+				Log.w("AcceptorRunnable", "New Identity package");
 				String myId = NetworkPackage.createIdentityPackage(context).getString("deviceId");
 				if (np.getString("deviceId").equals(myId)) {
 					// It has our ID! We can't do anything with it.
@@ -85,13 +85,13 @@ class AcceptorRunnable implements Runnable {
 						if (device == null) {
 							device = service.getDevice(remoteDevice.getAddress());
 							if (device == null)
-								Log.i("BluetoothLinkProvider", "Device has only been connected over bluetooth");
+								Log.i("AcceptorRunnable", "Device has only been connected over bluetooth");
 						}
 						blp.onNewDeviceAvailable(np, remoteDevice, device);
 					}
 				});
 			} else {
-				Log.w("BluetoothLinkProvider", "New non-identity package");
+				Log.w("AcceptorRunnable", "New non-identity package");
 				// This belongs to an existing link.
 				// First figure out which:
 				BluetoothLink desiredLink = blp.getKnownDevice(remoteDevice.getAddress());
@@ -103,7 +103,7 @@ class AcceptorRunnable implements Runnable {
 							if (device == null) {
 								device = service.getDevice(remoteDevice.getAddress());
 								if (device == null)
-									Log.w("BluetoothLinkProvider", "Device thinks we've connected before, but there's no record of that.");
+									Log.w("AcceptorRunnable", "Device thinks we've connected before, but there's no record of that.");
 								return;
 							}
 							BluetoothLink chosenLink = (BluetoothLink) device.getLink();
@@ -115,7 +115,7 @@ class AcceptorRunnable implements Runnable {
 				desiredLink.handleIncomingPackage(np);
 			}
 		} catch (Exception e) {
-			Log.d("AcceptorTask", "Problem with acceptor: " + e.getMessage(), e);
+			Log.d("AcceptorRunnable", "Problem with acceptor: " + e.getMessage(), e);
 		}
 	}
 
@@ -123,17 +123,17 @@ class AcceptorRunnable implements Runnable {
 		StringBuilder received = new StringBuilder();
 		byte[] buffer = new byte[4096];
 		int bytesRead;
-		Log.e("BluetoothLinkProvider", "Beginning to receive package and payload");
+		Log.e("AcceptorRunnable", "Beginning to receive package and payload");
 		while ((bytesRead = readFromStream(stream, buffer)) != -1) {
 			Log.i("ok",""+bytesRead);
 			String temp = new String(buffer, 0, bytesRead);
 			received.append(temp);
 		}
-		Log.e("BluetoothLinkProvider", "Finished receiving package and payload");
+		Log.e("AcceptorRunnable", "Finished receiving package and payload");
 		if (received.length() == 0) {
 			throw new Exception("0 bytes of data received");
 		} else {
-			Log.v("BluetoothLinkProvider", String.valueOf(received));
+			Log.v("AcceptorRunnable", String.valueOf(received));
 		}
 		return received;
 	}

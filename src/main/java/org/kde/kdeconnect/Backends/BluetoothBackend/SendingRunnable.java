@@ -16,7 +16,6 @@ class SendingRunnable implements Runnable {
 	private BluetoothLinkProvider bluetoothLinkProvider;
 	private final BluetoothDevice btDev;
 	private final Context context;
-	private int tries;
 
 	public SendingRunnable(BluetoothLinkProvider bluetoothLinkProvider, BluetoothDevice device, Context context) {
 		this.bluetoothLinkProvider = bluetoothLinkProvider;
@@ -27,18 +26,17 @@ class SendingRunnable implements Runnable {
 	@Override
 	public void run() {
 		synchronized (lock) {
-			tries = 0;
 			BluetoothSocket bluetoothSocket = obtainBluetoothSocket();
 
-			if (bluetoothSocket == null || tries > 2) return;
+			if (bluetoothSocket == null) return;
 
-			Log.w("BLP: ", "Connection established to device MAC=" + btDev.getAddress());
+			Log.w("SendingRunnable: ", "Connection established to device MAC=" + btDev.getAddress());
 
 			try {
 				BluetoothLink bl = new BluetoothLink(bluetoothLinkProvider, bluetoothLinkProvider.getBtAdapter(), btDev, bluetoothSocket);
 				bl.sendPackage(NetworkPackage.createIdentityPackage(context));
 			} catch (Exception e) {
-				Log.e("BLP: ", "Bonding to " + btDev.getAddress() + " failed.", e);
+				Log.e("SendingRunnable: ", "Bonding to " + btDev.getAddress() + " failed.", e);
 			}
 		}
 	}
@@ -52,17 +50,14 @@ class SendingRunnable implements Runnable {
 				if (btDev.getBondState() != BluetoothDevice.BOND_BONDED)
 					break;
 				bluetoothSocket = btDev.createRfcommSocketToServiceRecord(BluetoothLink.APP_UUID);
-				tries++;
-				Log.w("BLP: ", "Bonding to device MAC=" + btDev.getAddress());
+				Log.w("SendingRunnable: ", "Bonding to device MAC=" + btDev.getAddress());
 				bluetoothSocket.connect();
-				Log.w("BLP: ", "Bond succeeded");
+				Log.w("SendingRunnable: ", "Bond succeeded");
 				success = true;
 			} catch (Exception e) {
-				Log.w("BLP: ", "Bonding failed");
-				if (tries > 2) {
-					Log.e("BLP: ", "Giving up on device MAC=" + btDev.getAddress());
-					break;
-				}
+				Log.w("SendingRunnable: ", "Bonding failed for device MAC=" + btDev.getAddress());
+				bluetoothSocket = null;
+				break;
 			}
 		}
 		return bluetoothSocket;
