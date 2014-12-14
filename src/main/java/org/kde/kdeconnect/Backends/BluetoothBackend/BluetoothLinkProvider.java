@@ -92,6 +92,17 @@ public class BluetoothLinkProvider extends BaseLinkProvider {
 
 	@Override
 	public void onStart() {
+
+		if (btAdapter == null) {
+			// Bluetooth is unavailable on this hardware.
+			return;
+		}
+
+		if (!btAdapter.isEnabled()) {
+			// Bluetooth is turned off. Don't do anything more here.
+			return;
+		}
+
 		// Get a set of bluetooth-paired devices. They might not be connected through KDE Connect
 		bondedDevices.addAll(btAdapter.getBondedDevices());
 
