@@ -10,12 +10,9 @@ import android.os.Build;
 import android.util.Log;
 
 import org.kde.kdeconnect.Backends.BaseLinkProvider;
-import org.kde.kdeconnect.BackgroundService;
 import org.kde.kdeconnect.Device;
 import org.kde.kdeconnect.NetworkPackage;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -42,7 +39,7 @@ public class BluetoothLinkProvider extends BaseLinkProvider {
 	private final HashMap<String, BluetoothLink> knownComputers = new HashMap<String, BluetoothLink>();
 	/**
 	 * A Runnable specially for receiving incoming connections.
-	 * @see org.kde.kdeconnect.Backends.BluetoothBackend.BluetoothLinkProvider.AcceptorRunnable#run()
+	 * @see AcceptorRunnable#run()
 	 */
 	private AcceptorRunnable acceptor;
 
@@ -168,6 +165,15 @@ public class BluetoothLinkProvider extends BaseLinkProvider {
 		return true;
 	}
 
+	/**
+	 * Call this method upon receiving an identity package.
+	 * @see org.kde.kdeconnect.NetworkPackage#createIdentityPackage(android.content.Context)
+	 * @see #onNewDeviceAvailable(org.kde.kdeconnect.NetworkPackage, android.bluetooth.BluetoothDevice)
+	 * @param np the received package
+	 * @param bd the BluetoothDevice it came from
+	 * @param device a Device object corresponding to bd. Will be null the first time we receive
+	 *               a NetworkPackage from that BluetoothDevice.
+	 */
 	public void onNewDeviceAvailable(NetworkPackage np, BluetoothDevice bd, Device device) {
 		if (np == null)
 			return;
@@ -176,8 +182,19 @@ public class BluetoothLinkProvider extends BaseLinkProvider {
 		onNewDeviceAvailable(np, bd);
 	}
 
+	/**
+	 * Shim for call to {@link #addLink}. For use only by
+	 * {@link #onNewDeviceAvailable(org.kde.kdeconnect.NetworkPackage,
+	 * android.bluetooth.BluetoothDevice, org.kde.kdeconnect.Device)}.
+	 * @param np a newly-received identity package
+	 * @param bd the BluetoothDevice it came from
+	 */
 	private void onNewDeviceAvailable(NetworkPackage np, BluetoothDevice bd) {
 		addLink(np, new BluetoothLink(np.getString("deviceId"), this, getBtAdapter(), bd));
+	}
+
+	/*package*/ BluetoothLink getKnownDevice(String remoteDeviceAddress) {
+		return knownComputers.get(remoteDeviceAddress);
 	}
 
 	@Override
@@ -206,140 +223,4 @@ public class BluetoothLinkProvider extends BaseLinkProvider {
 		bondedDevices.remove(bd);
 	}
 
-	private class AcceptorRunnable implements Runnable {
-		private final BluetoothLinkProvider blp;
-		private BluetoothSocket socket;
-		private Context context;
-
-		public AcceptorRunnable(BluetoothLinkProvider blp, Context context) {
-			this.blp = blp;
-			this.context = context;
-		}
-
-		public void runAndReset(BluetoothSocket socket) {
-			this.socket = socket;
-			synchronized (this) {
-				run();
-			}
-			this.socket = null;
-		}
-
-		@Override
-		public void run() {
-
-			if (socket == null) return;
-
-			final BluetoothDevice remoteDevice = socket.getRemoteDevice();
-
-			Log.i("BluetoothLinkProvider", "Device found us: " + remoteDevice.toString());
-
-			// Avoid performance issues - don't discover while transmitting or receiving data
-			blp.getBtAdapter().cancelDiscovery();
-
-			// Assume we're connected and get a NetworkPackage.
-			// TODO: Add isConnected() check or similar here or in AcceptorTask#runAndReset()
-
-			try {
-				// First, pull in the stream.
-				InputStream stream = socket.getInputStream();
-
-				// Payload comes first...
-				StringBuilder received = new StringBuilder();
-				byte[] buffer = new byte[4096];
-				int bytesRead;
-				Log.e("BluetoothLinkProvider", "Beginning to receive package and payload");
-				while ((bytesRead = readFromStream(stream, buffer)) != -1) {
-					Log.i("ok",""+bytesRead);
-					String temp = new String(buffer, 0, bytesRead);
-					received.append(temp);
-				}
-				Log.e("BluetoothLinkProvider", "Finished receiving package and payload");
-				if (received.length() == 0) {
-					throw new Exception("0 bytes of data received");
-				} else {
-					Log.v("BluetoothLinkProvider", String.valueOf(received));
-				}
-				String serialized = received.toString();
-				String payload = null;
-				int splitPoint = received.indexOf("Bluetooth Nonce");
-				if (splitPoint > 0) {
-					// There are both a payload and a package here
-					payload = received.substring(0, splitPoint);
-					serialized = received.substring(splitPoint + "Bluetooth Nonce".length());
-				}
-				final String thePayload = payload;
-
-				// We now have a StringBuilder with a serialized NetworkPackage - time to unserialize it.
-				final NetworkPackage np = NetworkPackage.unserialize(serialized);
-				if (thePayload != null)
-					np.setPayload(thePayload.getBytes());
-
-				if (np.getType().equals(NetworkPackage.PACKAGE_TYPE_IDENTITY)) {
-					Log.w("BluetoothLinkProvider", "New Identity package");
-					String myId = NetworkPackage.createIdentityPackage(context).getString("deviceId");
-					if (np.getString("deviceId").equals(myId)) {
-						return;
-					}
-
-					// Let's pass this new package on to be handled properly.
-					BackgroundService.RunCommand(context, new BackgroundService.InstanceCallback() {
-						@Override
-						public void onServiceStart(BackgroundService service) {
-							Device device = service.getDevice(np.getString("deviceId"));
-							if (device == null) {
-								device = service.getDevice(remoteDevice.getAddress());
-								if (device == null)
-								Log.i("BluetoothLinkProvider", "Device has only been connected over bluetooth");
-							}
-							blp.onNewDeviceAvailable(np, remoteDevice, device);
-						}
-					});
-				} else {
-					Log.w("BluetoothLinkProvider", "New non-identity package");
-					// This belongs to an existing link.
-					// First figure out which:
-					BluetoothLink desiredLink = blp.knownComputers.get(remoteDevice.getAddress());
-					if (desiredLink == null) {
-						Log.w("AcceptorTask", "Link couldn't be found. Known links are " + blp.knownComputers.keySet().toString() + " while this device is " + remoteDevice.getAddress());
-						BackgroundService.RunCommand(context, new BackgroundService.InstanceCallback() {
-							@Override
-							public void onServiceStart(BackgroundService service) {
-								Device device = service.getDevice(np.getString("deviceId"));
-								if (device == null) {
-									device = service.getDevice(remoteDevice.getAddress());
-									if (device == null)
-										Log.w("BluetoothLinkProvider", "Device thinks we've connected before, but there's no record of that.");
-									return;
-								}
-								BluetoothLink chosenLink = (BluetoothLink) device.getLink();
-								chosenLink.handleIncomingPackage(np);
-							}
-						});
-						return;
-					}
-					desiredLink.handleIncomingPackage(np);
-				}
-			} catch (Exception e) {
-				Log.d("AcceptorTask", "Problem with acceptor: " + e.getMessage(), e);
-			}
-		}
-
-		/**
-		 * Convenience method to swallow IOExceptions raised by {@link android.bluetooth.BluetoothSocket#read(byte[], int, int)}
-		 * (Javadoc won't link directly to the method because it is package-private.)
-		 * @param stream Stream to read from
-		 * @param buffer buffer to use while reading
-		 * @return number of bytes read, or -1 on failure
-		 */
-		@SuppressWarnings("JavadocReference")
-		private int readFromStream(InputStream stream, byte[] buffer) {
-			int bytesRead;
-			try {
-				bytesRead = stream.read(buffer);
-			} catch (IOException ioe) {
-				bytesRead = -1;
-			}
-			return bytesRead;
-		}
-	}
 }
