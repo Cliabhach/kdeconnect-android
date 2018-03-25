@@ -1,0 +1,4 @@
+<resources>
+    <!-- The style to use on the MainActivity's NavigationView -->
+    <attr name="mainNavigationViewStyle" format="reference" />
+</resources>
