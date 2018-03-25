@@ -1,0 +1,29 @@
+<resources>
+    <!-- KdeConnectThemeBase styles must only be defined in the main res/values/ folder -->
+    <style name="KdeConnectThemeBase.Dark" parent="Theme.AppCompat">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryDark">@color/primaryDark</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="popupTheme">@style/ThemeOverlay.AppCompat</item>
+        <item name="mainNavigationViewStyle">@style/MainNavigationView.Dark</item>
+        <item name="android:textColorPrimary">@android:color/white</item>
+        <item name="android:textColor">@android:color/white</item>
+    </style>
+
+    <style name="KdeConnectThemeBase.Dark.NoActionBar" parent="KdeConnectThemeBase.Dark">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+    </style>
+
+    <!-- KdeConnectTheme styles (without the 'Base' on the end) can be redefined in other 'values' folders. like res/values-v21/ -->
+
+    <style name="KdeConnectTheme.Dark" parent="KdeConnectThemeBase.Dark" />
+    <style name="KdeConnectTheme.Dark.NoActionBar" parent="KdeConnectThemeBase.Dark.NoActionBar" />
+
+    <style name="MainNavigationView.Dark">
+        <item name="android:background">@drawable/state_list_drawer_background_dark</item>
+        <item name="itemBackground">@drawable/state_list_drawer_background_dark</item>
+        <item name="itemIconTint">@android:color/white</item>
+        <item name="itemTextColor">@android:color/white</item>
+    </style>
+</resources>
