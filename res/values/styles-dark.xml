@@ -6,6 +6,7 @@
         <item name="colorAccent">@color/accent</item>
         <item name="popupTheme">@style/ThemeOverlay.AppCompat</item>
         <item name="mainNavigationViewStyle">@style/MainNavigationView.Dark</item>
+        <item name="colorHighContrast">@android:color/white</item>
         <item name="android:textColorPrimary">@android:color/white</item>
         <item name="android:textColor">@android:color/white</item>
     </style>
