@@ -10,6 +10,7 @@
         <item name="colorPrimary">@color/primary</item>
         <item name="colorPrimaryDark">@color/primaryDark</item>
         <item name="colorAccent">@color/accent</item>
+        <item name="toolbarStyle">@style/KdeConnectTheme.Toolbar</item>
         <item name="popupTheme">@style/ThemeOverlay.AppCompat.Light</item>
         <item name="mainNavigationViewStyle">@style/MainNavigationView</item>
         <item name="colorHighContrast">@android:color/black</item>
@@ -24,6 +25,9 @@
 
     <style name="KdeConnectTheme" parent="KdeConnectThemeBase" />
 
+    <style name="KdeConnectTheme.Toolbar" parent="Widget.AppCompat.Toolbar">
+        <item name="android:background">?attr/colorPrimary</item>
+    </style>
     <style name="KdeConnectTheme.NoActionBar" parent="KdeConnectThemeBase.NoActionBar" />
 
     <style name="MainNavigationView">

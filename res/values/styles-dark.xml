@@ -1,9 +1,13 @@
 <resources>
+
+    <color name="darkToolbarBackground">#612e00</color>
+
     <!-- KdeConnectThemeBase styles must only be defined in the main res/values/ folder -->
     <style name="KdeConnectThemeBase.Dark" parent="Theme.AppCompat">
         <item name="colorPrimary">@color/primary</item>
         <item name="colorPrimaryDark">@color/primaryDark</item>
         <item name="colorAccent">@color/accent</item>
+        <item name="toolbarStyle">@style/KdeConnectTheme.Toolbar.Dark</item>
         <item name="popupTheme">@style/ThemeOverlay.AppCompat</item>
         <item name="mainNavigationViewStyle">@style/MainNavigationView.Dark</item>
         <item name="colorHighContrast">@android:color/white</item>
@@ -18,6 +22,9 @@
 
     <!-- KdeConnectTheme styles (without the 'Base' on the end) can be redefined in other 'values' folders. like res/values-v21/ -->
 
+    <style name="KdeConnectTheme.Toolbar.Dark">
+        <item name="android:background">@color/darkToolbarBackground</item>
+    </style>
     <style name="KdeConnectTheme.Dark" parent="KdeConnectThemeBase.Dark" />
     <style name="KdeConnectTheme.Dark.NoActionBar" parent="KdeConnectThemeBase.Dark.NoActionBar" />
 
